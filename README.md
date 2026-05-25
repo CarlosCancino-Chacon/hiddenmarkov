@@ -1,7 +1,6 @@
 # hiddenmarkov
 
 [![PyPI](https://img.shields.io/pypi/v/python-hiddenmarkov)](https://pypi.org/project/python-hiddenmarkov/)
-[![GitHub release](https://img.shields.io/github/v/release/neosatrapahereje/hiddenmarkov)](https://github.com/neosatrapahereje/hiddenmarkov/releases/latest)
 
 A simple Python library for Hidden Markov Models.
 
