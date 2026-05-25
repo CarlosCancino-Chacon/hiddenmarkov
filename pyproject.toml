@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "python-hiddenmarkov"
+version = "0.1.4"
+description = "A simple Python package for Hidden Markov Models"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Carlos Cancino-Chacón", email = "carloscancinochacon@gmail.com" },
+    { name = "Silvan Peter" },
+]
+keywords = ["hmm", "hidden_markov_models"]
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+    "scipy",
+]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+
+[project.urls]
+Homepage = "https://github.com/neosatrapahereje/hiddenmarkov"
+
+[tool.setuptools.packages.find]
+exclude = ["tests*"]

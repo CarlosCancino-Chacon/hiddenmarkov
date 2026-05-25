@@ -5,9 +5,9 @@ Hidden Markov Models
 
 This module contains case classes to define Hidden Markov Models.
 """
-import pkg_resources
 import warnings
 import numpy as np
+from importlib.metadata import version, PackageNotFoundError
 
 from collections import defaultdict
 from typing import Any, Iterable, Optional, Tuple, ClassVar, List
@@ -18,7 +18,10 @@ from .utils import inverted_softmax, softmax
 
 
 # define a version variable
-__version__ = pkg_resources.get_distribution("python-hiddenmarkov").version
+try:
+    __version__ = version("python-hiddenmarkov")
+except PackageNotFoundError:
+    __version__ = "unknown"
 
 
 class TransitionModel(object):

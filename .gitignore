@@ -131,3 +131,5 @@ dmypy.json
 # MacOs
 *~
 *.DS_Store
+hiddenmarkov/score_hmm.py
+tests/dev_transition_model_array.py
