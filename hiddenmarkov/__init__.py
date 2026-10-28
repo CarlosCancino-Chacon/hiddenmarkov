@@ -5,26 +5,35 @@ Hidden Markov Models
 
 This module contains case classes to define Hidden Markov Models.
 """
-import warnings
+from __future__ import annotations
+
 import numpy as np
 from importlib.metadata import version, PackageNotFoundError
 
 from collections import defaultdict
-from typing import Any, Iterable, Optional, Tuple, ClassVar, List
+from typing import Any, Callable, ClassVar, Iterable, List, Optional, Tuple
 
 from scipy.special import logsumexp
 
 from .utils import inverted_softmax, softmax
 
+try:
+    from ._hmm import viterbi_loop as _viterbi_loop
+    _HAS_CYTHON = True
+except ImportError:  # pragma: no cover
+    _HAS_CYTHON = False
+
+# Type alias for a single windowed probability model entry.
+_ProbModelEntry = Tuple[Callable[..., Any], int]
 
 # define a version variable
 try:
     __version__ = version("python-hiddenmarkov")
-except PackageNotFoundError:
+except PackageNotFoundError:  # pragma: no cover
     __version__ = "unknown"
 
 
-class TransitionModel(object):
+class TransitionModel:
     """
     Base class for implementing a Transition Model
     """
@@ -39,25 +48,25 @@ class TransitionModel(object):
         self,
         i: Optional[int] = None,
         j: Optional[int] = None,
-        *args,
-        **kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> np.ndarray:
         raise NotImplementedError
 
 
-class ObservationModel(object):
+class ObservationModel:
     """
     Base class for implementing an Observation Model
     """
 
     def __init__(self, use_log_probabilities: bool = True) -> None:
-        self.use_log_probabilities = use_log_probabilities
+        self.use_log_probabilities: bool = use_log_probabilities
 
-    def __call__(self, observation: Any, *args, **kwargs) -> np.ndarray:
+    def __call__(self, observation: Any, *args: Any, **kwargs: Any) -> np.ndarray:
         raise NotImplementedError()
 
 
-class HiddenMarkovModel(object):
+class HiddenMarkovModel:
     """
     Hidden Markov Model
 
@@ -185,7 +194,7 @@ HMM = HiddenMarkovModel
 
 def viterbi_algorithm_naive(
     hmm: HiddenMarkovModel,
-    observations: Iterable,
+    observations: Iterable[Any],
     log_probabilities: bool = True,
 ) -> Tuple[np.ndarray, float]:
     """
@@ -306,57 +315,47 @@ def viterbi_algorithm(
         log proability if `log_probabilities` is True)
         of the best sequence.
     """
-    # Set whether to use log probabilities in transition and
-    # observation models
     hmm.transition_model.use_log_probabilities = log_probabilities
     hmm.observation_model.use_log_probabilities = log_probabilities
-    # Initialize matrix for holding the best sub-sequence
-    # (log-)likelihood
-    omega = np.zeros((len(observations), hmm.n_states))
-    # Initialize matrix for holding the best sub-sequence idx
-    omega_idx = np.zeros((len(observations), hmm.n_states), dtype=int)
 
-    # Initiate for i == 0
-    obs_prob = hmm.observation_model(observations[0])
+    T = len(observations)
+    N = hmm.n_states
+    omega = np.zeros((T, N))
+    omega_idx = np.zeros((T, N), dtype=np.int64)
 
-    if log_probabilities:
-        omega[0, :] = obs_prob + hmm.transition_model.init_probabilities
-    else:
-        omega[0, :] = obs_prob * hmm.transition_model.init_probabilities
+    # Pre-compute all observation probabilities so the inner loop only
+    # operates on plain arrays (required for the Cython path).
+    obs_probs = np.ascontiguousarray(
+        [hmm.observation_model(obs) for obs in observations]
+    )
+    trans_mat = np.ascontiguousarray(hmm.transition_model())
+    init_probs = hmm.transition_model.init_probabilities
 
-    omega_idx[0, :] = 0
-
-    # Viterbi recursion
-    if log_probabilities:
-        for i, obs in enumerate(observations[1:], 1):
-            obs_prob = hmm.observation_model(obs)
-            # omega slice is a row vector, transition_model is a matrix
-            # of prob from state id_row to state id_column
-            prob_of_jump_to_state = omega[i - 1, :] + hmm.transition_model().T
+    if _HAS_CYTHON:
+        _viterbi_loop(omega, omega_idx, obs_probs, trans_mat, init_probs,
+                      log_probabilities)
+    elif log_probabilities:
+        omega[0, :] = obs_probs[0] + init_probs
+        for t in range(1, T):
+            prob_of_jump_to_state = omega[t - 1, :] + trans_mat.T
             state = np.argmax(prob_of_jump_to_state, axis=1)
-            prob = prob_of_jump_to_state[np.arange(hmm.n_states), state]
-            omega[i, :] = obs_prob + prob
-            omega_idx[i, :] = state
-
+            prob = prob_of_jump_to_state[np.arange(N), state]
+            omega[t, :] = obs_probs[t] + prob
+            omega_idx[t, :] = state
     else:
-        for i, obs in enumerate(observations[1:], 1):
-            obs_prob = hmm.observation_model(obs)
-            # omega slice is a row vector, transition_model is a matrix
-            # of prob from state id_row to state id_column
-            prob_of_jump_to_state = omega[i - 1, :] * hmm.transition_model().T
+        omega[0, :] = obs_probs[0] * init_probs
+        for t in range(1, T):
+            prob_of_jump_to_state = omega[t - 1, :] * trans_mat.T
             state = np.argmax(prob_of_jump_to_state, axis=1)
-            prob = prob_of_jump_to_state[np.arange(hmm.n_states), state]
-            omega[i, :] = obs_prob * prob
-            omega_idx[i, :] = state
+            prob = prob_of_jump_to_state[np.arange(N), state]
+            omega[t, :] = obs_probs[t] * prob
+            omega_idx[t, :] = state
 
-    # Get best path (backtracking!)
-    # Get index of the best state
+    # Backtrack
     best_sequence_idx = omega[-1, :].argmax()
-    # likelihood of the path
     path_likelihood = omega[-1, best_sequence_idx]
-    # Get best path (backtracking!)
     seq = [best_sequence_idx]
-    for s in range(len(observations) - 1):
+    for s in range(T - 1):
         best_sequence_idx = omega_idx[-(s + 1), best_sequence_idx]
         seq.append(best_sequence_idx)
     best_sequence = np.array(seq[::-1], dtype=int)
@@ -522,7 +521,11 @@ def forward_algorithm_step(
     if forward_variable is None:
         transition_prob: np.ndarray = transition_model.init_probabilities
     else:
-        transition_prob: np.ndarray = np.dot(transition_model().T, forward_variable)
+        # The matrix multiply must happen in raw-probability space.
+        # When log_probabilities=True the stored forward_variable holds log
+        # probs, so we exponentiate before the dot product.
+        fv = np.exp(forward_variable) if log_probabilities else forward_variable
+        transition_prob: np.ndarray = np.dot(transition_model().T, fv)
     observation_prob: np.ndarray = observation_model(observation)
     if log_probabilities:
         forward_variable = observation_prob + np.log(transition_prob)
@@ -580,22 +583,23 @@ class ConstantTransitionModel(TransitionModel):
             self.init_probabilities = init_probabilities
 
         if normalize_init_probabilities:
-            # Normalize initial distribution
-            self.init_probabilities /= np.maximum(
-                np.sum(self.init_probabilities), 1e-10
-            )
+            # Normalize in raw-probability space, then recompute log version.
+            # (The property getter returns log probs when use_log_probabilities
+            # is True, so we bypass it and work on the backing arrays directly.)
+            self._init_dist /= np.maximum(np.sum(self._init_dist), 1e-10)
+            self._log_init_dist = np.log(self._init_dist)
 
         if normalize_transition_probabilities:
-            self.transition_probabilities /= np.sum(
-                self.transition_probabilities, 1, keepdims=True
+            self._transition_prob /= np.sum(
+                self._transition_prob, 1, keepdims=True
             )
+            self._log_transition_prob = np.log(self._transition_prob)
 
     @property
     def init_probabilities(self) -> np.ndarray:
         if self.use_log_probabilities:
             return self._log_init_dist
-        else:
-            return self._init_dist
+        return self._init_dist
 
     @init_probabilities.setter
     def init_probabilities(self, init_probabilities: np.ndarray) -> None:
@@ -606,23 +610,25 @@ class ConstantTransitionModel(TransitionModel):
     def transition_probabilities(self) -> np.ndarray:
         if self.use_log_probabilities:
             return self._log_transition_prob
-        else:
-            return self._transition_prob
+        return self._transition_prob
 
     @transition_probabilities.setter
-    def transition_probabilities(self, transition_probabilities) -> None:
+    def transition_probabilities(self, transition_probabilities: np.ndarray) -> None:
         self._transition_prob = transition_probabilities
         self._log_transition_prob = np.log(self._transition_prob)
 
-    def __call__(self, i=None, j=None) -> np.ndarray:
+    def __call__(
+        self,
+        i: Optional[int] = None,
+        j: Optional[int] = None,
+    ) -> np.ndarray:
         if i is None and j is None:
             return self.transition_probabilities
-        elif i is not None and j is None:
+        if i is not None and j is None:
             return self.transition_probabilities[i, :]
-        elif i is None and j is not None:
+        if i is None and j is not None:
             return self.transition_probabilities[:, j]
-        else:
-            return self.transition_probabilities[i, j]
+        return self.transition_probabilities[i, j]
 
 
 class CategoricalObservationModel(ObservationModel):
@@ -632,9 +638,9 @@ class CategoricalObservationModel(ObservationModel):
     Parameters
     ----------
     observation_probabilities : np.ndarray
-        A table of probabilities for each observation in each state.
-    observations : Iterable
-        A list of the observations
+        A (num_observations, num_states) table of emission probabilities.
+    observations : Iterable or None
+        Labels for each observation row.  When None, integer strings are used.
     use_log_probabilities : bool
         If True, use log probabilities.
     """
@@ -642,37 +648,35 @@ class CategoricalObservationModel(ObservationModel):
     def __init__(
         self,
         observation_probabilities: np.ndarray,
-        observations: Iterable[Any] = None,
+        observations: Optional[Iterable[Any]] = None,
         use_log_probabilities: bool = True,
-    ):
+    ) -> None:
         super().__init__(use_log_probabilities=use_log_probabilities)
 
         self.observation_probabilities = observation_probabilities
 
         if observations is not None:
-            self.observations = list(observations)
+            self.observations: List[Any] = list(observations)
         else:
             self.observations = [str(i) for i in range(len(observation_probabilities))]
 
-        self.observation_indices = dict(
-            [(obs, i) for obs, i in zip(self.observations, range(len(observations)))]
-        )
+        self.observation_indices: dict[Any, int] = {
+            obs: i for i, obs in enumerate(self.observations)
+        }
 
     @property
-    def observation_probabilities(self):
+    def observation_probabilities(self) -> np.ndarray:
         if self.use_log_probabilities:
             return self._log_obs_prob
-        else:
-            return self._obs_prob
+        return self._obs_prob
 
     @observation_probabilities.setter
-    def observation_probabilities(self, observation_probabilities):
+    def observation_probabilities(self, observation_probabilities: np.ndarray) -> None:
         self._obs_prob = observation_probabilities
         self._log_obs_prob = np.log(self._obs_prob)
 
-    def __call__(self, observation, *args, **kwargs):
+    def __call__(self, observation: Any, *args: Any, **kwargs: Any) -> np.ndarray:
         idx = self.observation_indices[observation]
-        # idx = self.observations.index(observation)
         return self.observation_probabilities[idx]
 
 
@@ -682,58 +686,58 @@ CategoricalStringObservationModel = CategoricalObservationModel
 
 class WindowedObservationModel(ObservationModel):
     """
-    Windowed Observation Model
-    Uses a list of state-specific probability models
-    as observation model. Probability models can also be distances,
-    in which case the different distances are inverted and softmaxed.
+    Windowed Observation Model.
 
-    Only works with viterbi_algorithm_windowed
+    Uses a list of state-specific probability models as the observation model.
+    Distances are supported: pass ``use_inverted_probs=True`` to convert
+    distances (lower = more probable) to probabilities via inverted softmax.
+
+    Only works with :func:`viterbi_algorithm_windowed`.
 
     Parameters
     ----------
-    prob_models_at_state : list of tuples
-        A list of tuples (probability_model,prob_model_state_id)
-        indexed by state_id
-
-    Attributes
-    ----------
-    prob_models_at_state: list of tuples
-
+    prob_models_at_state : list of lists of (callable, int) pairs
+        ``prob_models_at_state[state_id]`` is a list of
+        ``(probability_model, global_state_index)`` pairs for the window
+        centred at ``state_id``.
+    use_inverted_probs : bool
+        When True, model outputs are treated as distances and converted to
+        probabilities via inverted softmax (lower distance → higher prob).
+        When False, outputs are treated as scores and converted via softmax.
+    use_log_probabilities : bool
+        If True, return log probabilities.
     """
 
     def __init__(
         self,
-        prob_models_at_state: List[tuple],
+        prob_models_at_state: List[List[_ProbModelEntry]],
         use_inverted_probs: bool = True,
         use_log_probabilities: bool = True,
-    ):
+    ) -> None:
         super().__init__(use_log_probabilities=use_log_probabilities)
-        self.use_log_probabilities = use_log_probabilities
-        self.use_inverted_probs = use_inverted_probs
-        self.prob_models_at_state = prob_models_at_state
-        self.state_number = len(prob_models_at_state)
-        if self.use_inverted_probs:
-            if self.use_log_probabilities:
-                self.outfunc = lambda d: np.log(inverted_softmax(np.array(d)))
-            else:
-                self.outfunc = lambda d: inverted_softmax(np.array(d))
-        else:
-            if self.use_log_probabilities:
-                self.outfunc = lambda d: np.log(softmax(np.array(d)))
-            else:
-                self.outfunc = lambda d: softmax(np.array(d))
+        self.use_inverted_probs: bool = use_inverted_probs
+        self.prob_models_at_state: List[List[_ProbModelEntry]] = prob_models_at_state
+        self.state_number: int = len(prob_models_at_state)
 
-    def __call__(self, observation, current_state, *args, **kwargs):
-        # give the current state pick the right states
+    def __call__(
+        self,
+        observation: Any,
+        current_state: int,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Tuple[np.ndarray, np.ndarray]:
         prob_models = self.prob_models_at_state[
             max(0, min(current_state, self.state_number - 1))
         ]
-        # compute the probability for all models
-        dists = list()
-        glob_ref_idx = list()
-
+        dists: List[Any] = []
+        glob_ref_idx: List[int] = []
         for prob_model, idx in prob_models:
             dists.append(prob_model(observation))
             glob_ref_idx.append(idx)
 
-        return self.outfunc(dists), np.array(glob_ref_idx)
+        arr = np.array(dists)
+        probs = inverted_softmax(arr) if self.use_inverted_probs else softmax(arr)
+
+        if self.use_log_probabilities:
+            return np.log(probs), np.array(glob_ref_idx)
+        return probs, np.array(glob_ref_idx)

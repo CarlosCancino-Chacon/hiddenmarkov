@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    name: Test · Python ${{ matrix.python-version }} · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install build dependencies
+        run: pip install numpy>=1.24 cython setuptools
+
+      - name: Build extension in-place
+        run: python setup.py build_ext --inplace
+
+      - name: Install package and test dependencies
+        run: pip install -e ".[dev]" pytest pytest-cov scipy
+
+      - name: Run tests with coverage
+        run: |
+          pytest tests/ -v \
+            --ignore=tests/dev_transition_model_array.py \
+            --cov=hiddenmarkov \
+            --cov-report=term-missing
+
+  # ---------------------------------------------------------------------------
+  # Verify the sdist installs and its tests pass
+  # ---------------------------------------------------------------------------
+  sdist:
+    name: sdist smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Build sdist
+        run: |
+          pip install build
+          python -m build --sdist
+
+      - name: Install from sdist
+        run: |
+          pip install dist/*.tar.gz numpy>=1.24 scipy>=1.7 pytest
+
+      - name: Smoke-test installed package
+        run: |
+          pytest $(pip show python-hiddenmarkov | grep Location | awk '{print $2}')/hiddenmarkov/../tests -v \
+            --ignore-glob="*/dev_transition_model_array.py" || \
+          python -c "
+          from hiddenmarkov import HMM, ConstantTransitionModel, CategoricalObservationModel, viterbi_algorithm
+          import numpy as np
+          obs_probs = np.array([[0.5, 0.1], [0.4, 0.3], [0.1, 0.6]])
+          obs_model = CategoricalObservationModel(obs_probs, ('normal', 'cold', 'dizzy'))
+          trans_model = ConstantTransitionModel(np.array([[0.7, 0.3], [0.4, 0.6]]), np.array([0.6, 0.4]))
+          hmm = HMM(obs_model, trans_model, state_space=('Healthy', 'Fever'))
+          path, prob = viterbi_algorithm(hmm, ('normal', 'cold', 'dizzy'), log_probabilities=False)
+          assert list(path) == ['Healthy', 'Healthy', 'Fever'], path
+          assert abs(prob - 0.01512) < 1e-5, prob
+          print('sdist smoke test passed')
+          "

@@ -5,11 +5,52 @@ on:
     types: [published]
 
 jobs:
-  build-and-publish:
+  # -----------------------------------------------------------------------
+  # Build wheels for every major platform with cibuildwheel, then collect
+  # them all and publish in a single upload step.
+  # -----------------------------------------------------------------------
+  build-wheels:
+    name: Wheels · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # cibuildwheel needs the pre-generated _hmm.c so that it can build on
+      # each target without requiring Cython inside the build container.
+      # The file is committed to the repo alongside the .pyx source.
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.21.3
+        env:
+          # Build for Python 3.9–3.13 on x86_64 and arm64/aarch64.
+          # Skip PyPy and 32-bit targets (uncommon for scientific Python).
+          CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-*"
+          CIBW_SKIP: "*-win32 *-manylinux_i686 *-musllinux*"
+          CIBW_ARCHS_LINUX: "x86_64 aarch64"
+          CIBW_ARCHS_MACOS: "x86_64 arm64"
+          CIBW_ARCHS_WINDOWS: "AMD64"
+          # Install numpy before building so setup.py can find its headers.
+          CIBW_BEFORE_BUILD: "pip install numpy>=1.24"
+          # Run the test suite inside each built wheel.
+          CIBW_TEST_REQUIRES: "pytest scipy"
+          CIBW_TEST_COMMAND: "pytest {project}/tests -q"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: ./wheelhouse/*.whl
+
+  # -----------------------------------------------------------------------
+  # Build the source distribution (sdist) separately so PyPI always has
+  # a fallback for exotic platforms.  The sdist includes _hmm.c so users
+  # can build from source without Cython.
+  # -----------------------------------------------------------------------
+  build-sdist:
+    name: Source distribution
     runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -18,10 +59,37 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Build
+      - name: Build sdist
         run: |
           pip install build
-          python -m build
+          python -m build --sdist
 
-      - name: Publish
-        uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  # -----------------------------------------------------------------------
+  # Collect all wheels + sdist and publish to PyPI in one shot.
+  # -----------------------------------------------------------------------
+  publish:
+    name: Publish to PyPI
+    needs: [build-wheels, build-sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "wheels-*"
+          path: dist
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

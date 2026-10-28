@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=61", "numpy>=1.24"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "python-hiddenmarkov"
-version = "0.1.4"
+version = "0.2.0"
 description = "A simple Python package for Hidden Markov Models"
 readme = "README.md"
 license = { text = "MIT" }
@@ -15,8 +15,8 @@ authors = [
 keywords = ["hmm", "hidden_markov_models"]
 requires-python = ">=3.8"
 dependencies = [
-    "numpy",
-    "scipy",
+    "numpy>=1.24",
+    "scipy>=1.7",
 ]
 classifiers = [
     "License :: OSI Approved :: MIT License",
@@ -27,7 +27,20 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/neosatrapahereje/hiddenmarkov"
+Homepage = "https://github.com/CarlosCancino-Chacon/hiddenmarkov"
 
 [tool.setuptools.packages.find]
 exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+hiddenmarkov = ["py.typed", "_hmm.pyi"]
+
+[tool.coverage.run]
+source = ["hiddenmarkov"]
+omit = ["hiddenmarkov/score_hmm.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+]
