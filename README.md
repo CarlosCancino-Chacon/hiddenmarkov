@@ -1,6 +1,8 @@
 # hiddenmarkov
 
 [![PyPI](https://img.shields.io/pypi/v/python-hiddenmarkov)](https://pypi.org/project/python-hiddenmarkov/)
+[![CI](https://github.com/CarlosCancino-Chacon/hiddenmarkov/actions/workflows/ci.yml/badge.svg)](https://github.com/CarlosCancino-Chacon/hiddenmarkov/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/CarlosCancino-Chacon/hiddenmarkov/branch/main/graph/badge.svg)](https://codecov.io/gh/CarlosCancino-Chacon/hiddenmarkov)
 
 A simple Python library for Hidden Markov Models.
 
@@ -16,7 +18,7 @@ pip install python-hiddenmarkov
 
 Develop version
 ```bash
-git clone https://github.com/neosatrapahereje/hiddenmarkov.git
+git clone https://github.com/CarlosCancino-Chacon/hiddenmarkov.git
 cd hiddenmarkov
 pip install -e .
 ```
@@ -58,4 +60,4 @@ print("Expected probability", 0.01512)
 ## Licence
 
 The code in this package is licensed under the MIT Licence. For details,
-please see the [LICENSE](https://github.com/neosatrapahereje/hiddenmarkov/blob/main/LICENSE) file.
+please see the [LICENSE](https://github.com/CarlosCancino-Chacon/hiddenmarkov/blob/main/LICENSE) file.

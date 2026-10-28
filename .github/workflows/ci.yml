@@ -36,7 +36,14 @@ jobs:
           pytest tests/ -v \
             --ignore=tests/dev_transition_model_array.py \
             --cov=hiddenmarkov \
-            --cov-report=term-missing
+            --cov-report=term-missing \
+            --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
 
   # ---------------------------------------------------------------------------
   # Verify the sdist installs and its tests pass
