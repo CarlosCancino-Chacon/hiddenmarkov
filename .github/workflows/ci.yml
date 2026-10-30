@@ -9,6 +9,9 @@ jobs:
   test:
     name: Test · Python ${{ matrix.python-version }} · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -29,7 +32,7 @@ jobs:
         run: python setup.py build_ext --inplace
 
       - name: Install package and test dependencies
-        run: pip install -e ".[dev]" pytest pytest-cov scipy
+        run: pip install -e . pytest pytest-cov scipy
 
       - name: Run tests with coverage
         run: |
