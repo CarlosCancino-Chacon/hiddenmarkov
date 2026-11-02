@@ -13,6 +13,7 @@ jobs:
     name: Wheels · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
@@ -32,8 +33,10 @@ jobs:
           CIBW_ARCHS_LINUX: "x86_64 aarch64"
           CIBW_ARCHS_MACOS: "x86_64 arm64"
           CIBW_ARCHS_WINDOWS: "AMD64"
-          # Install numpy before building so setup.py can find its headers.
-          CIBW_BEFORE_BUILD: "pip install numpy>=1.24"
+          # Install Cython and numpy before building so setup.py can compile
+          # fresh from the .pyx source rather than the pre-generated .c file.
+          # Pinning numpy < 2 avoids ABI changes that break auditwheel/delocate.
+          CIBW_BEFORE_BUILD: "pip install 'numpy>=1.24,<2' 'Cython>=3'"
           # Run the test suite inside each built wheel.
           CIBW_TEST_REQUIRES: "pytest scipy"
           CIBW_TEST_COMMAND: "pytest {project}/tests -q"

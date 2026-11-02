@@ -1,5 +1,9 @@
 # Release Notes
 
+## Version 0.2.1
+
+* Fix wheel build: add Cython to `build-system.requires` and pin `numpy<2` for the build to resolve `auditwheel`/`delocate-wheel` failures in the CI publish workflow.
+
 ## Version 0.2.0
 
 * Fix log-probability bugs in `ConstantTransitionModel` (normalization operated on log values instead of raw probabilities), `forward_algorithm_step` (dot product used log forward variable), and `WindowedObservationModel` (output function not updated when `use_log_probabilities` changed after construction).

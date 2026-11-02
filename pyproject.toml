@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61", "numpy>=1.24"]
+requires = ["setuptools>=61", "numpy>=1.24,<2", "Cython>=3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "python-hiddenmarkov"
-version = "0.2.0"
+version = "0.2.1"
 description = "A simple Python package for Hidden Markov Models"
 readme = "README.md"
 license = { text = "MIT" }
