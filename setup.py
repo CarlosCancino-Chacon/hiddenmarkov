@@ -26,8 +26,9 @@ except ImportError:
 _PYX = "hiddenmarkov/_hmm.pyx"
 _C   = "hiddenmarkov/_hmm.c"
 
-_source = _PYX if _USE_CYTHON else _C
-_can_build = _USE_CYTHON or os.path.exists(_C)
+_can_use_pyx = _USE_CYTHON and os.path.exists(_PYX)
+_source = _PYX if _can_use_pyx else _C
+_can_build = _can_use_pyx or os.path.exists(_C)
 
 _extension = Extension(
     "hiddenmarkov._hmm",
@@ -36,7 +37,7 @@ _extension = Extension(
     define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")],
 )
 
-if _USE_CYTHON:
+if _can_use_pyx:
     _ext_modules = _cythonize(
         [_extension],
         compiler_directives={

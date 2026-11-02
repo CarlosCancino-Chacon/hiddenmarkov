@@ -33,7 +33,7 @@ Homepage = "https://github.com/CarlosCancino-Chacon/hiddenmarkov"
 exclude = ["tests*"]
 
 [tool.setuptools.package-data]
-hiddenmarkov = ["py.typed", "_hmm.pyi"]
+hiddenmarkov = ["py.typed", "_hmm.pyi", "_hmm.pyx"]
 
 [tool.coverage.run]
 source = ["hiddenmarkov"]

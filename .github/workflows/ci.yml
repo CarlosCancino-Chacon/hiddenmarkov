@@ -69,22 +69,9 @@ jobs:
           python -m build --sdist
 
       - name: Install from sdist
-        run: |
-          pip install dist/*.tar.gz numpy>=1.24 scipy>=1.7 pytest
+        run: pip install dist/*.tar.gz
 
       - name: Smoke-test installed package
         run: |
-          pytest $(pip show python-hiddenmarkov | grep Location | awk '{print $2}')/hiddenmarkov/../tests -v \
-            --ignore-glob="*/dev_transition_model_array.py" || \
-          python -c "
-          from hiddenmarkov import HMM, ConstantTransitionModel, CategoricalObservationModel, viterbi_algorithm
-          import numpy as np
-          obs_probs = np.array([[0.5, 0.1], [0.4, 0.3], [0.1, 0.6]])
-          obs_model = CategoricalObservationModel(obs_probs, ('normal', 'cold', 'dizzy'))
-          trans_model = ConstantTransitionModel(np.array([[0.7, 0.3], [0.4, 0.6]]), np.array([0.6, 0.4]))
-          hmm = HMM(obs_model, trans_model, state_space=('Healthy', 'Fever'))
-          path, prob = viterbi_algorithm(hmm, ('normal', 'cold', 'dizzy'), log_probabilities=False)
-          assert list(path) == ['Healthy', 'Healthy', 'Fever'], path
-          assert abs(prob - 0.01512) < 1e-5, prob
-          print('sdist smoke test passed')
-          "
+          cd /tmp
+          python -c "from hiddenmarkov import HMM, ConstantTransitionModel, CategoricalObservationModel, viterbi_algorithm; import numpy as np; om = CategoricalObservationModel(np.array([[0.5,0.1],[0.4,0.3],[0.1,0.6]]), ('normal','cold','dizzy')); tm = ConstantTransitionModel(np.array([[0.7,0.3],[0.4,0.6]]), np.array([0.6,0.4])); hmm = HMM(om, tm, state_space=('Healthy','Fever')); path, prob = viterbi_algorithm(hmm, ('normal','cold','dizzy'), log_probabilities=False); assert list(path) == ['Healthy','Healthy','Fever']; assert abs(prob-0.01512) < 1e-5; print('OK')"
