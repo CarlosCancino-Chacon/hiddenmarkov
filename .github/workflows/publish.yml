@@ -3,6 +3,8 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
+  # Manual dry run: builds wheels + sdist but does NOT publish to PyPI.
+  workflow_dispatch:
 
 jobs:
   # -----------------------------------------------------------------------
@@ -20,9 +22,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # cibuildwheel needs the pre-generated _hmm.c so that it can build on
-      # each target without requiring Cython inside the build container.
-      # The file is committed to the repo alongside the .pyx source.
+      # QEMU is needed to build/test the aarch64 Linux wheels on an x86 runner.
+      - name: Set up QEMU
+        if: runner.os == 'Linux'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.21.3
         env:
@@ -33,13 +39,12 @@ jobs:
           CIBW_ARCHS_LINUX: "x86_64 aarch64"
           CIBW_ARCHS_MACOS: "x86_64 arm64"
           CIBW_ARCHS_WINDOWS: "AMD64"
-          # Install Cython and numpy before building so setup.py can compile
-          # fresh from the .pyx source rather than the pre-generated .c file.
-          # Pinning numpy < 2 avoids ABI changes that break auditwheel/delocate.
-          CIBW_BEFORE_BUILD: "pip install 'numpy>=1.24,<2' 'Cython>=3'"
           # Run the test suite inside each built wheel.
           CIBW_TEST_REQUIRES: "pytest scipy"
-          CIBW_TEST_COMMAND: "pytest {project}/tests -q"
+          # --import-mode=importlib stops pytest from putting the project root
+          # on sys.path, which would shadow the installed wheel with the
+          # source tree (which has no compiled extension).
+          CIBW_TEST_COMMAND: "pytest {project}/tests -q --import-mode=importlib -p no:cacheprovider"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -78,6 +83,7 @@ jobs:
   publish:
     name: Publish to PyPI
     needs: [build-wheels, build-sdist]
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
