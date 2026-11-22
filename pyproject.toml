@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "python-hiddenmarkov"
-version = "0.2.2"
+version = "0.3.0"
 description = "A simple Python package for Hidden Markov Models"
 readme = "README.md"
 license = { text = "MIT" }
@@ -13,7 +13,7 @@ authors = [
     { name = "Silvan Peter" },
 ]
 keywords = ["hmm", "hidden_markov_models"]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.24",
     "scipy>=1.7",

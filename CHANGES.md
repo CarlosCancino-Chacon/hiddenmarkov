@@ -1,8 +1,9 @@
 # Release Notes
 
-## Version 0.2.2
+## Version 0.3.0
 
 * Add optimized forward algorithm, selectable with `HMM(..., forward="optimized" | "standard")` (default: optimized). Based on a proposal by [Meisterschueler](https://github.com/Meisterschueler) in [pymatchmaker/matchmaker#75](https://github.com/pymatchmaker/matchmaker/pull/75).
+* Drop support for Python < 3.10.
 * Fix PyPI wheel build workflow.
 
 ## Version 0.2.1
