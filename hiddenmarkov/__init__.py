@@ -79,6 +79,16 @@ class HiddenMarkovModel:
     state_space: iterable (optional)
         Labels of the states (e.g., a list of strings containing
         the names of each state).
+    forward: {"optimized", "standard"}
+        The implementation of the forward algorithm step used by
+        :meth:`forward_algorithm_step`. ``"optimized"`` (default)
+        restricts the vector-matrix product to the states that currently
+        have non-zero probability and to the columns reachable from them
+        (see :func:`forward_algorithm_step_optimized`); it requires a
+        :class:`ConstantTransitionModel`, and for any other transition
+        model the standard implementation is used instead. ``"standard"``
+        uses :func:`forward_algorithm_step`. Both give numerically
+        equivalent results.
 
     Attributes
     ----------
@@ -95,8 +105,22 @@ class HiddenMarkovModel:
         observation_model: ObservationModel,
         transition_model: TransitionModel,
         state_space: Optional[Iterable] = None,
+        forward: str = "optimized",
     ) -> None:
         super().__init__()
+        if forward not in _FORWARD_ALGORITHMS:
+            raise ValueError(
+                "`forward` needs to be 'optimized' or 'standard' "
+                f"but is {forward!r}"
+            )
+        self.forward: str = forward
+        self._forward_step: Callable[..., np.ndarray] = _FORWARD_ALGORITHMS[forward]
+        if forward == "optimized" and not isinstance(
+            transition_model, ConstantTransitionModel
+        ):
+            # The optimization relies on the structure of a constant
+            # transition matrix; other models use the standard algorithm.
+            self._forward_step = forward_algorithm_step
         self.observation_model: ObservationModel = observation_model
         self.transition_model: TransitionModel = transition_model
         self.n_states: int = self.transition_model.n_states
@@ -175,7 +199,7 @@ class HiddenMarkovModel:
         current_state : int
             Index of the current hidden state.
         """
-        self.forward_variable = forward_algorithm_step(
+        self.forward_variable = self._forward_step(
             observation_model=self.observation_model,
             transition_model=self.transition_model,
             observation=observation,
@@ -537,6 +561,80 @@ def forward_algorithm_step(
     return forward_variable
 
 
+def forward_algorithm_step_optimized(
+    observation_model: ObservationModel,
+    transition_model: ConstantTransitionModel,
+    observation: Any,
+    forward_variable: Optional[np.ndarray] = None,
+    log_probabilities: bool = False,
+) -> np.ndarray:
+    """
+    Step of the forward algorithm exploiting sparsity.
+
+    Numerically equivalent to :func:`forward_algorithm_step` (up to
+    floating point summation order), but the product ``T.T @ fv`` is
+    restricted to the rows of ``T`` between the first and last state with
+    non-zero probability and to the columns that can be reached from them.
+    This is much cheaper when the forward variable is concentrated in a
+    small region of a large, banded (e.g., left-to-right) transition matrix.
+
+    Based on a proposal by Meisterschueler in
+    https://github.com/pymatchmaker/matchmaker/pull/75
+
+    Parameters
+    ----------
+    observation_model : ObservationModel
+        An observation model.
+    transition_model : ConstantTransitionModel
+        A constant transition model. Other transition models are not
+        supported (use :func:`forward_algorithm_step` instead).
+    observation : Any
+        An observation. The observation needs to be of the same
+        type as specified by the observation model.
+    forward_variable : np.ndarray
+        The forward variable of the HMM. If none is given, the
+        initial probabilities specified by the transition model
+        will be used.
+    log_probabilities : bool
+        If true, use log probabilities.
+
+    Returns
+    -------
+    forward_variable : np.ndarray
+        The updated forward variable.
+    """
+    transition_model.use_log_probabilities = False
+    observation_model.use_log_probabilities = log_probabilities
+    if forward_variable is None:
+        transition_prob: np.ndarray = transition_model.init_probabilities
+    else:
+        fv = np.exp(forward_variable) if log_probabilities else forward_variable
+        transition_prob = np.zeros_like(fv)
+        nonzero = np.flatnonzero(fv)
+        if nonzero.size:
+            lo, hi = nonzero[0], nonzero[-1] + 1
+            # Rows < hi have no non-zero entries beyond column `m - 1`.
+            m = transition_model.last_nonzero_columns[hi - 1] + 1
+            transition_prob[:m] = (
+                fv[lo:hi] @ transition_model.transition_probabilities[lo:hi, :m]
+            )
+    observation_prob: np.ndarray = observation_model(observation)
+    if log_probabilities:
+        forward_variable = observation_prob + np.log(transition_prob)
+        forward_variable -= logsumexp(forward_variable)
+    else:
+        forward_variable = observation_prob * transition_prob
+        forward_variable /= max(forward_variable.sum(), 1e-6)
+
+    return forward_variable
+
+
+_FORWARD_ALGORITHMS: dict = {
+    "optimized": forward_algorithm_step_optimized,
+    "standard": forward_algorithm_step,
+}
+
+
 class ConstantTransitionModel(TransitionModel):
     """
     Constant Transition Model
@@ -616,6 +714,17 @@ class ConstantTransitionModel(TransitionModel):
     def transition_probabilities(self, transition_probabilities: np.ndarray) -> None:
         self._transition_prob = transition_probabilities
         self._log_transition_prob = np.log(self._transition_prob)
+        # Rightmost non-zero column of each row, made monotonic with a
+        # cumulative max so that it bounds the columns reachable from any
+        # range of rows [0, i] (used by forward_algorithm_step_optimized).
+        T = np.asarray(transition_probabilities)
+        self._last_nonzero_columns = np.maximum.accumulate(
+            T.shape[1] - 1 - np.argmax(T[:, ::-1] != 0, axis=1)
+        )
+
+    @property
+    def last_nonzero_columns(self) -> np.ndarray:
+        return self._last_nonzero_columns
 
     def __call__(
         self,

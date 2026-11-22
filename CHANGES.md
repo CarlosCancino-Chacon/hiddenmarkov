@@ -1,5 +1,10 @@
 # Release Notes
 
+## Version 0.2.2
+
+* Add optimized forward algorithm, selectable with `HMM(..., forward="optimized" | "standard")` (default: optimized). Based on a proposal by [Meisterschueler](https://github.com/Meisterschueler) in [pymatchmaker/matchmaker#75](https://github.com/pymatchmaker/matchmaker/pull/75).
+* Fix PyPI wheel build workflow.
+
 ## Version 0.2.1
 
 * Fix wheel build: add Cython to `build-system.requires` and pin `numpy<2` for the build to resolve `auditwheel`/`delocate-wheel` failures in the CI publish workflow.
